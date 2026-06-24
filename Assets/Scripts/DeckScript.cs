@@ -13,7 +13,7 @@ public class DeckScript : MonoBehaviour
         ShuffleDeck();
     }
 
-    void GenerateDeck()
+    public void GenerateDeck()
     {
         foreach (GameObject prefab in cardPrefabs)
         {
@@ -83,5 +83,11 @@ public class DeckScript : MonoBehaviour
         deck.RemoveAt(0);
         return c;
     }
-    
+
+    public void ResetDeck()
+    {
+        deck.Clear();
+        GenerateDeck();
+        ShuffleDeck();
+    }
 }

@@ -1,9 +1,9 @@
 using System;
-using System.Collections.Generic;
+using System.Collections;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEditor;
-using UnityEngine.UIElements;
+using System.Collections.Generic;
 
 public class GameManager : MonoBehaviour
 {
@@ -11,26 +11,179 @@ public class GameManager : MonoBehaviour
     public DeckScript deckscript;
     
     // Buttons, Labels, usw.
-    public UnityEngine.UIElements.Button Betbtn;
-    public UnityEngine.UIElements.Button Hitbtn;
-    public UnityEngine.UIElements.Button Standbtn;
-    public UnityEngine.UIElements.Label Cardvalueplayer;
-    public UnityEngine.UIElements.Label Cardvaluedealer;
-    public UnityEngine.UIElements.Label Balancevalue;
-    public UnityEngine.UIElements.Label Betsvalue;
+    public UnityEngine.UI.Button Betbtn;
+    public UnityEngine.UI.Button Hitbtn;
+    public UnityEngine.UI.Button Standbtn;
+    public UnityEngine.UI.Button Startbtn;
+    public UnityEngine.UI.Button Dealbtn;
+    public TMPro.TextMeshProUGUI Cardvalueplayer;
+    public TMPro.TextMeshProUGUI Cardvaluedealer;
+    public TMPro.TextMeshProUGUI Balancevalue;
+    public TMPro.TextMeshProUGUI Betsvalue;
+    public TMPro.TextMeshProUGUI WinAmountText;
+    public TMPro.TextMeshProUGUI LoseAmountText;
+    public TMPro.TextMeshProUGUI DrawAmountText;
+    public TMPro.TextMeshProUGUI BalanceMenu;
+
     public DeckScript deck;
     public Transform Playerempty;
     public Transform Dealerempty;
     public Transform cubedealer;
     public Transform cubeplayer;
+    public GameObject dealerhiddencard;
+    public GameObject WinPanel;
+    public GameObject LosePanel;
+    public GameObject DrawPanel;
+    public GameObject Menu;
+    public GameObject GameUI;
+    public int roundToGo = 5;
+    public TMPro.TextMeshProUGUI Rounds;
+
+    public int Points = 300;
+    int balance;
+    public float Bonus;
+    private int pot = 0;
+
     
     // Funktionen (Buttons,...)
 
+    public int ConvertPointsToMoney(int points)
+    {
+        return points /10;
+    }
+
+
+    private IEnumerator DealStartCards()
+    {
+        GiveCardToPlayer();
+        yield return new WaitForSeconds(1f);
+
+        GiveCardToDealer();
+        yield return new WaitForSeconds(1f);
+
+        GiveCardToPlayer();
+        yield return new WaitForSeconds(1f);
+
+        GiveCardToDealer(true); // verdeckt
+    }
+    
+
+    IEnumerator ShowResultThenMenu()
+    {
+        yield return new WaitForSeconds(3f);
+
+        WinPanel.SetActive(false);
+        LosePanel.SetActive(false);
+        DrawPanel.SetActive(false);
+        GameUI.SetActive(false);
+
+        Menu.SetActive(true);
+    }
+
+    public void ResetRound()
+    {
+        PlayerHandValue = 0;
+        DealerHandValue = 0;
+
+        PlayerHand.Clear();
+        DealerHand.Clear();
+
+        deckscript.ResetDeck();
+        
+        if (dealerhiddencard != null)
+        {
+            Destroy(dealerhiddencard);
+            dealerhiddencard = null;
+        }
+        
+        foreach (Transform t in cubeplayer)
+        {
+            Destroy(t.gameObject);
+        }
+        
+        foreach (Transform t in cubedealer)
+        {
+            Destroy(t.gameObject);
+        }
+        
+        Cardvalueplayer.text = "0";
+        Cardvaluedealer.text = "0";
+    }
+
+    
+    public void ShowWin()
+    {
+        roundToGo--;
+        Rounds.text = roundToGo.ToString();
+        
+        int winAmount = pot * 2;
+        balance += winAmount;
+        
+        WinAmountText.text = "+" + winAmount.ToString();
+        Balancevalue.text = balance.ToString();
+        
+        pot = 0;
+        Betsvalue.text = "0";
+
+        BalanceMenu.text = balance.ToString();
+        
+        WinPanel.SetActive(true);
+        StartCoroutine(ShowResultThenMenu());
+    }
+
+    public void ShowLose()
+    {
+        roundToGo--;
+        Rounds.text = roundToGo.ToString();
+        
+        LoseAmountText.text = "-" + pot.ToString();
+        
+        pot = 0;
+        Betsvalue.text = "0";
+        
+        BalanceMenu.text = balance.ToString();
+        
+        LosePanel.SetActive(true);
+        StartCoroutine(ShowResultThenMenu());
+    }
+
+    public void ShowDraw()
+    {
+        roundToGo--;
+        Rounds.text = roundToGo.ToString();
+        
+        balance += pot;
+        DrawAmountText.text = "+" + pot.ToString();
+        Balancevalue.text = balance.ToString();
+        
+        pot = 0;
+        Betsvalue.text = "0";
+        
+        BalanceMenu.text = balance.ToString();
+        
+        DrawPanel.SetActive(true);
+        StartCoroutine(ShowResultThenMenu());
+    }
+
+    private int FixAce(int total, List<Card> hand)
+    {
+        foreach (Card c in hand)
+        {
+            if (c.rank == "Ass" && total > 21)
+            {
+                total -= 10; 
+            }
+        }
+
+        return total;
+    }
+
+    
     public GameObject SpawnCard(Card c, Transform area, int index)
     {
         Debug.Log("SPAWN PREFAB: " + c.cardPrefab.name);
         
-        GameObject go = Instantiate(c.cardPrefab);
+        GameObject go = Instantiate(c.cardPrefab, area);
         
         if (index == 1)
         {
@@ -55,42 +208,42 @@ public class GameManager : MonoBehaviour
         return go;
     }
 
-    public void CheckPlayerState() // Sagt ob das Spiel schon entschieden ist!
+    public void CheckPlayerState()
     {
-
-        if (PlayerHandValue > 21 && DealerHandValue <= 21)
+        if (PlayerHandValue > 21)
         {
             Debug.Log("Ein Satz mit X, dass war wohl nix!!! Du hast verloren!!!");
-            
+            ShowLose();
+            return;
         }
         
-        else if (PlayerHandValue == DealerHandValue)
+        if (DealerHandValue > 21)
         {
-            Debug.Log("Das war sooooo Knapp!!! Aber steckste net drin!!! Gleichstand!!!");
-            
+            Debug.Log("JJJJJJJJJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!!! DU GEWINNST!!!");
+            ShowWin();
+            return;
         }
         
-        else if (PlayerHandValue > 21 && DealerHandValue > 21)
+        if (PlayerHandValue > DealerHandValue)
         {
-            Debug.Log("Das war sooooo Knapp!!! Aber steckste net drin!!!");
+            Debug.Log("JJJJJJJJJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!!! DU GEWINNST!!!");
+            ShowWin();
+            return;
         }
         
-        else if (PlayerHandValue >= 21 && DealerHandValue < PlayerHandValue)
+        if (DealerHandValue > PlayerHandValue)
         {
-            Debug.Log(
-                "JJJJJJJJJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!!! DU GEWINNST!!!");
+            Debug.Log("Ein Satz mit X, dass war wohl nix!!! Du hast verloren!!!");
+            ShowLose();
+            return;
         }
-
-        else if (PlayerHandValue >= 21 && DealerHandValue > 21)
-
-        {
-            Debug.Log(
-                "JJJJJJJJJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!!! DU GEWINNST!!!");
-        }
+        
+        Debug.Log("Das war sooooo Knapp!!! Aber steckste net drin!!! Gleichstand!!!");
+        ShowDraw();
         
     }
     
-    
+    // Buttons usw.
     
     public void HitClicked()
     {
@@ -102,29 +255,54 @@ public class GameManager : MonoBehaviour
     {
         
         
-        if (DealerHand.Count == 2)
+        if (dealerhiddencard != null)
         {
-            GameObject SecCard = GiveCardToDealer();
-            
-            SecCard.transform.rotation = Quaternion.Euler(180, 0, 0);
-            GiveCardToDealer();
-            CheckPlayerState();
+            dealerhiddencard.transform.rotation = Quaternion.Euler(0, 0, 0);
+            Cardvaluedealer.text = DealerHandValue.ToString();
+
+            dealerhiddencard = null;
+
         }
+
+        StartCoroutine(DealerPlay());
         
-        else
-        {
-            GiveCardToDealer();
-            CheckPlayerState();
-        }
         Debug.Log("Stand");
         
     }
 
     public void BetClicked()
     {
-        Debug.Log("OnBet");
+        if (balance <= 0)
+            return;
+
+        balance -= 1;
+        pot += 1;
+
+        Balancevalue.text = balance.ToString();
+        Betsvalue.text = pot.ToString();
+    }
+    
+    public void StartClicked()
+    {
+        Menu.SetActive(false);
+        GameUI.SetActive(true);
+
+        ResetRound();
+
+        pot = 0;
+        Betsvalue.text = "0";
+
+        Betbtn.interactable = true;   
+        Dealbtn.interactable = true;  
+
     }
 
+    public void DealClicked()
+    {
+        Betbtn.interactable = false; 
+        StartCoroutine(DealStartCards());
+    }
+    
     //**********************************************************************************************
     
     // Dealer
@@ -132,24 +310,44 @@ public class GameManager : MonoBehaviour
     public int DealerHandValue = 0;
     
     // Dealer Funktion
-    public GameObject GiveCardToDealer()
+    public GameObject GiveCardToDealer(bool facedown = false)
     {
         
         Card c = deckscript.DrawCard();
         
         DealerHand.Add(c);
         
-        GameObject go = SpawnCard(c, cubedealer, DealerHandValue);
+        GameObject go = SpawnCard(c, cubedealer, DealerHand.Count);
         
         DealerHandValue += c.value;
-        Cardvaluedealer.text = DealerHandValue.ToString();
+        DealerHandValue = FixAce(DealerHandValue, DealerHand);
 
-        if (DealerHand.Count == 2)
+        if (facedown)
         {
+            dealerhiddencard = go;
             go.transform.rotation = Quaternion.Euler(180, 0, 0);
         }
+
+        else
+        {
+            Cardvaluedealer.text = DealerHandValue.ToString();
+        }
+        
         
         return go;
+    }
+
+    private IEnumerator DealerPlay()
+    {
+        // Dealer zieht solange er unter 17 ist
+        while (DealerHandValue < 17)
+        {
+            yield return new WaitForSeconds(1f); // 1 Sekunde warten
+            GiveCardToDealer();                  // Karte ziehen
+        }
+
+        yield return new WaitForSeconds(1f);     // kleine Pause
+        CheckPlayerState();                      // Gewinner bestimmen
     }
 
     
@@ -170,6 +368,7 @@ public class GameManager : MonoBehaviour
         SpawnCard(c, cubeplayer, PlayerHand.Count);
         
         PlayerHandValue += c.value;
+        PlayerHandValue = FixAce(PlayerHandValue, PlayerHand);
         Cardvalueplayer.text = PlayerHandValue.ToString();
     }
 
@@ -179,29 +378,25 @@ public class GameManager : MonoBehaviour
     // Game
         void Start()
     {
-        var root = FindFirstObjectByType<UIDocument>().rootVisualElement;
-        
-        Hitbtn = root.Q<Button>("Hitbtn");
-        Hitbtn.clicked += HitClicked;
+        Startbtn.onClick.AddListener(StartClicked);
+        Hitbtn.onClick.AddListener(HitClicked);
+        Betbtn.onClick.AddListener(BetClicked);
+        Standbtn.onClick.AddListener(StandClicked);
+        Dealbtn.onClick.AddListener(DealClicked);
 
-        Betbtn = root.Q<Button>("Betbtn");
-        Betbtn.clicked += BetClicked;
+        balance = ConvertPointsToMoney(Points);
+        Balancevalue.text = balance.ToString();
+        BalanceMenu.text = balance.ToString();
         
-        Standbtn = root.Q<Button>("Standbtn");
-        Standbtn.clicked += StandClicked;
+        Cardvalueplayer.text = "0";
+        Cardvaluedealer.text = "0";
         
-        Cardvalueplayer = root.Q<Label>("Cardvalueplayer");
-        
-        Cardvaluedealer = root.Q<Label>("Cardvaluedealer");
-        
+        Rounds.text = roundToGo.ToString();
         
         deck.ShuffleDeck();
         
-        GiveCardToPlayer();
-        GiveCardToDealer();
-        GiveCardToPlayer();
-        GiveCardToDealer();
-        
+        Menu.SetActive(true);
+
     }
 
 
